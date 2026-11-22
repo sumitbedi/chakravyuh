@@ -413,7 +413,7 @@ function clearRing() {
   if (clean && S.streak > 1) setTimeout(() => floatText(`Smriti ×${mult()}`, '#5fd38a'), 300);
   if (S.clock - bonus < 3) setTimeout(() => toast('Narrow escape!'), 250);
   $('vignette').style.opacity = 0;
-  const waitAI = S.prefetch ? Promise.race([S.prefetch, new Promise((r) => setTimeout(r, 3000))]) : null;
+  const waitAI = S.prefetch ? Promise.race([S.prefetch, new Promise((r) => setTimeout(r, 6000))]) : null;
   setTimeout(async () => {
     if (waitAI && !(S.pending && S.pending.ring === S.ring)) { $('designing').classList.add('show'); await waitAI; $('designing').classList.remove('show'); }
     if (S.phase === 'study' && S.ring === prevRing + 1) startStudy();
