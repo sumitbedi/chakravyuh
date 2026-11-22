@@ -268,7 +268,7 @@ function step(dt, now) {
   for (const sec of S.secrets || []) {
     if (sec.open) continue;
     const ddx = sec.x - S.px, ddy = sec.y - S.py, d = Math.hypot(ddx, ddy);
-    if (d < 1.25 && Math.hypot(sec.from.x - S.px, sec.from.y - S.py) < 0.7 && (-Math.sin(S.yaw) * ddx - Math.cos(S.yaw) * ddy) / d > 0.55) S.canOpen = sec;
+    if (d < 1.5 && Math.hypot(sec.from.x - S.px, sec.from.y - S.py) < 0.95 && (-Math.sin(S.yaw) * ddx - Math.cos(S.yaw) * ddy) / d > 0.55) S.canOpen = sec;
   }
   $('open').classList.toggle('show', !!S.canOpen);
   if (monsters) {
