@@ -85,7 +85,7 @@ Completed-level statistics: ${JSON.stringify(stats)}`;
         method: 'POST', signal: controller.signal,
         headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY,
           'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-haiku-5-5', max_tokens: 1500, messages }),
+        body: JSON.stringify({ model: 'claude-haiku-5-5', max_tokens: 1500, thinking: { type: 'disabled' }, output_config: { effort: 'low' }, messages }),
       });
       if (!response.ok) throw new Error(`Anthropic API returned HTTP ${response.status}`);
       const data = await response.json();
