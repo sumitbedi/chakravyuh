@@ -113,6 +113,7 @@ function buildRing() {
   if (ai?.rows) { try { maze = parseRows(ai.rows); if (!maze.gate) maze = null; } catch { maze = null; } }
   S.aiMaze = !!maze;
   S.name = ai?.name || '';
+  S.aiStudy = S.aiMaze && Number.isFinite(ai?.studySeconds) ? Math.max(4, Math.min(20, ai.studySeconds)) : 0;
   if (ai?.tip) S.lastTip = ai.tip;
   if (!maze) maze = makeMaze(ringCells(n), (Date.now() ^ (n * 9973)) >>> 0, Math.min(0.3, (n - 1) * 0.06));
   if (S.mode === 'escape') { S.start = maze.center; S.goal = maze.gate; }
@@ -355,7 +356,7 @@ function startStudy() {
   $('s-guru').innerHTML = S.lastTip ? `<b>Guru:</b> ${S.lastTip.replace(/</g, '&lt;')}` : '';
   drawMap($('map'), false);
   show('study');
-  studyLeft = ringStudy(S.ring);
+  studyLeft = S.aiStudy || ringStudy(S.ring);
   $('s-count').textContent = studyLeft;
   clearInterval(studyTimer);
   studyTimer = setInterval(() => { studyLeft--; $('s-count').textContent = studyLeft; if (studyLeft <= 0) beginWalk(); }, 1000);
@@ -400,12 +401,12 @@ function clearRing() {
   if (clean) S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
   const pts = 100 * S.ring * mult();
   S.score += pts;
-  S.ringStats.push({ ring: S.ring, seconds: +secs.toFixed(1), steps: S.steps, shortest: S.opt, wrongSteps: S.wrong, peeks: S.ringPeeks, bumps: S.bumps });
+  S.ringStats.push({ ring: S.ring, cells: (maze.size - 1) / 2, seconds: +secs.toFixed(1), steps: S.steps, shortest: S.opt, wrongSteps: S.wrong, peeks: S.ringPeeks, bumps: S.bumps });
   sfx.clear(); if (clean && S.streak > 1) sfx.streak(S.streak);
   navigator.vibrate?.(40);
   const prevRing = S.ring;
   S.ring++;
-  S.phase = 'study';
+  S.phase = 'transition';
   // time bonus sized to the next ring
   const bonus = Math.round(6 + ringCells(S.ring) * 2.2);
   S.clock += bonus;
@@ -416,7 +417,7 @@ function clearRing() {
   const waitAI = S.prefetch ? Promise.race([S.prefetch, new Promise((r) => setTimeout(r, 6000))]) : null;
   setTimeout(async () => {
     if (waitAI && !(S.pending && S.pending.ring === S.ring)) { $('designing').classList.add('show'); await waitAI; $('designing').classList.remove('show'); }
-    if (S.phase === 'study' && S.ring === prevRing + 1) startStudy();
+    if (S.phase === 'transition' && S.ring === prevRing + 1) startStudy();
   }, 650);
   updateHud();
 }
@@ -470,7 +471,7 @@ async function prefetchNext() {
   if (!last) return; // first ring: nothing to learn from yet
   const cells = ringCells(ring);
   const body = {
-    level: ring, mode: ring % 2 === 1 ? 'escape' : 'enter', cells: Math.max(4, cells - 1),
+    level: ring, mode: ring % 2 === 1 ? 'escape' : 'enter', cells: Math.max(4, Math.min(13, last.cells || cells - 1)),
     seconds: last.seconds, steps: last.steps, shortest: last.shortest, wrongSteps: last.wrongSteps,
     peeks: last.peeks, bumps: last.bumps, studySeconds: ringStudy(ring), braid: 0.1,
   };
