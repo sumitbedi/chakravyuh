@@ -342,6 +342,7 @@ function show(id, on = true) { $(id).classList.toggle('show', on); }
 let studyTimer, studyLeft = 0;
 function newRun() {
   sfx.unlock(); ambient(true);
+  try { speechSynthesis?.cancel(); } catch {}
   show('intro', false); show('done', false);
   Object.assign(S, { prefetch: null, ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
   startStudy();
@@ -438,7 +439,19 @@ function gameOver() {
   $('d-tip').textContent = S.lastTip || 'Chunk the route into three parts and remember only the turns in each.';
   drawReplay($('d-map'));
   show('done');
+  speakTip($('d-tip').textContent);
   updateHud();
+}
+function speakTip(text) {
+  try {
+    if (isMuted() || !window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = speechSynthesis.getVoices().find((x) => /en[-_]IN/i.test(x.lang)) || speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang));
+    if (v) u.voice = v;
+    u.rate = 0.95; u.pitch = 0.85;
+    setTimeout(() => speechSynthesis.speak(u), 900);
+  } catch {}
 }
 function drawReplay(cv) {
   const { g, size } = maze;
