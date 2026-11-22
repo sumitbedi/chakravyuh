@@ -342,7 +342,7 @@ let studyTimer, studyLeft = 0;
 function newRun() {
   sfx.unlock(); ambient(true);
   show('intro', false); show('done', false);
-  Object.assign(S, { ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
+  Object.assign(S, { prefetch: null, ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
   startStudy();
 }
 function startStudy() {
@@ -413,7 +413,11 @@ function clearRing() {
   if (clean && S.streak > 1) setTimeout(() => floatText(`Smriti ×${mult()}`, '#5fd38a'), 300);
   if (S.clock - bonus < 3) setTimeout(() => toast('Narrow escape!'), 250);
   $('vignette').style.opacity = 0;
-  setTimeout(() => { if (S.phase === 'study' && S.ring === prevRing + 1) startStudy(); }, 650);
+  const waitAI = S.prefetch ? Promise.race([S.prefetch, new Promise((r) => setTimeout(r, 3000))]) : null;
+  setTimeout(async () => {
+    if (waitAI && !(S.pending && S.pending.ring === S.ring)) { $('designing').classList.add('show'); await waitAI; $('designing').classList.remove('show'); }
+    if (S.phase === 'study' && S.ring === prevRing + 1) startStudy();
+  }, 650);
   updateHud();
 }
 function gameOver() {
@@ -471,7 +475,7 @@ async function prefetchNext() {
     peeks: last.peeks, bumps: last.bumps, studySeconds: ringStudy(ring), braid: 0.1,
   };
   S.lastTip = localTip(last);
-  try {
+  S.prefetch = (async () => { try {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 12000);
     const r = await fetch('/api/guru', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
     clearTimeout(to);
@@ -480,7 +484,8 @@ async function prefetchNext() {
     if (S.ring !== ring - 1 && S.ring !== ring) return; // run moved on
     S.pending = { ...j, ring };
     if (j.tip) S.lastTip = j.tip;
-  } catch {}
+  } catch {} })();
+  return S.prefetch;
 }
 
 function toast(msg) {

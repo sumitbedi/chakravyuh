@@ -65,7 +65,7 @@ This player ${struggled ? 'struggled' : great ? 'did great' : 'did well enough t
 Use exactly N=${nextCells} cells per axis (cap 13): same N if struggling, +2 if great, otherwise +1.
 Adapt route complexity, dead ends and loops (braid) as well as study time to their performance.
 Return ONLY a JSON object: {"tip":"one memory coaching sentence, max 25 words; a Hindi word is welcome",
-"name":"short evocative name, e.g. Padmavyuha - the Lotus","studySeconds":10,"rows":["..."]}.
+"name":"a short evocative name for THIS maze, chosen to fit its shape, from the vyuhas of the Mahabharata (e.g. Krauncha the heron, Makara the crocodile, Garuda the eagle, Shakata the cart, Sarpa the serpent, Ardhachandra the half-moon, Mandala the circle, Vajra the thunderbolt), picked at random, do not default to Padma or Chakra","studySeconds":10,"rows":["..."]}.
 studySeconds must be an integer from 5 to 20; give struggling players more study time.
 rows must have exactly 2N+1 strings, EACH exactly 2N+1 characters, using ONLY # wall and . floor.
 Logical cells are at odd (x,y) tile coordinates; make all logical cells floor and connect corridors.
