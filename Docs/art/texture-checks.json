@@ -1,0 +1,20 @@
+{
+  "wall": {
+    "size": [
+      512,
+      512
+    ],
+    "format": "PNG",
+    "opposite_edges_identical": true,
+    "mean_luminance": 99.46
+  },
+  "floor": {
+    "size": [
+      512,
+      512
+    ],
+    "format": "PNG",
+    "opposite_edges_identical": true,
+    "mean_luminance": 70.48
+  }
+}

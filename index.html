@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0806" />
+  <title>Chakravyuh</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="view">
+      <canvas id="three"></canvas>
+      <div id="flash"></div>
+      <div id="toast"></div>
+    </div>
+
+    <div id="panel">
+      <div id="hud">
+        <div class="stat"><span class="k">LEVEL</span><span id="h-level" class="v">1</span></div>
+        <div class="stat"><span class="k">TIME</span><span id="h-time" class="v">0.0</span></div>
+        <div class="stat"><span class="k">BEST</span><span id="h-best" class="v">–</span></div>
+        <div class="stat"><span class="k">FACING</span><span id="h-dir" class="v">N</span></div>
+      </div>
+      <div id="goalline">Find the way <b id="h-goal">out</b></div>
+      <div id="controls">
+        <div id="stick" aria-label="Move: drag the ring"><div id="knob"></div><span class="tick n">▲</span><span class="tick s">▼</span><span class="tick w">⟲</span><span class="tick e">⟳</span></div>
+        <button class="btn peek" data-act="peek" aria-label="Peek at map">MAP<small>+5s</small></button>
+      </div>
+    </div>
+
+    <!-- overlays -->
+    <div id="intro" class="overlay show">
+      <div class="card">
+        <div class="eyebrow">A memory maze</div>
+        <h1>CHAKRAVYUH</h1>
+        <p class="story">Abhimanyu knew how to enter the Chakravyuh.<br/>He never learned the way out.</p>
+        <ol class="rules">
+          <li>Study the map from above.</li>
+          <li>Walk it in first person, from memory.</li>
+          <li>Fastest time wins. Every map peek adds 5 s.</li>
+        </ol>
+        <button class="cta" id="start">Enter the maze</button>
+        <p class="hint">Joystick to walk & turn · drag the view to look · keys: WASD / arrows, M = map</p>
+      </div>
+    </div>
+
+    <div id="study" class="overlay">
+      <div class="card wide">
+        <div class="eyebrow" id="s-title">Level 1 · Escape</div>
+        <canvas id="map"></canvas>
+        <div class="legend"><span class="dot you"></span>You start here <span class="dot goal"></span>Get here</div>
+        <div class="countdown">Memorise it <b id="s-count">10</b></div>
+        <button class="cta" id="ready">I've got it</button>
+      </div>
+    </div>
+
+    <div id="peek" class="overlay">
+      <div class="card wide"><canvas id="peekmap"></canvas><div class="eyebrow">Peeking… +5s</div></div>
+    </div>
+
+    <div id="done" class="overlay">
+      <div class="card">
+        <div class="eyebrow" id="d-title">Level 1 cleared</div>
+        <h2 id="d-score">0</h2>
+        <div class="grid">
+          <div><span class="k">Walk time</span><b id="d-time">0s</b></div>
+          <div><span class="k">Peeks</span><b id="d-peeks">0</b></div>
+          <div><span class="k">Best</span><b id="d-best">–</b></div>
+          <div><span class="k">Tiles walked</span><b id="d-steps">0</b></div>
+          <div><span class="k">Shortest</span><b id="d-opt">0</b></div>
+          <div><span class="k">Wrong turns</span><b id="d-wrong">0</b></div>
+        </div>
+        <div class="guru"><span class="k">Guru says</span><p id="d-tip">…</p></div>
+        <button class="cta" id="next">Next level</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
