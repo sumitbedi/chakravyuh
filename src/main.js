@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { makeMaze, bfs, DIRS } from './maze.js';
+import { sfx, ambient, setMuted, isMuted } from './audio.js';
+import { Monsters } from './monsters.js';
 
 const $ = (id) => document.getElementById(id);
-const DIR_NAMES = ['N', 'E', 'S', 'W'];
-const PEEK_COST = 150, BUMP_COST = 20, SEC_COST = 5;
 
 // ---------- three.js setup ----------
 const canvas = $('three');
@@ -72,53 +72,61 @@ for (const [k, file] of [['wall', 'wall.png'], ['floor', 'floor.png'], ['ceil', 
   }, undefined, () => {});
 }
 
-// ---------- level state ----------
-const WALL_H = 1.25, EYE = 0.55, RADIUS = 0.2, SPEED = 2.1, TURN = 2.3, PEEK_SECS = 5;
-let world = null, maze = null, distToGoal = null, goalMarker;
+// ---------- run state ----------
+const WALL_H = 1.25, EYE = 0.55, RADIUS = 0.2, SPEED = 2.1, TURN = 2.3;
+const START_CLOCK = 40, PEEK_COST = 3, CAUGHT_COST = 8, MAX_MULT = 5;
+let world = null, maze = null, distToGoal = null, goalMarker, monsters = null;
 const S = {
-  level: 1, mode: 'escape', start: null, goal: null, cfg: null, name: '',
-  px: 0, py: 0, yaw: 0, pitch: 0, tile: null, t0: 0, time: 0, running: false,
-  steps: 0, wrong: 0, peeks: 0, bumps: 0, opt: 0, next: null,
+  phase: 'intro', // intro | study | walk | over
+  ring: 1, mode: 'escape', start: null, goal: null, name: '', aiMaze: false,
+  px: 0, py: 0, yaw: 0, pitch: 0, startYaw: 0, tile: null,
+  clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, ringPeeks: 0,
+  ringT0: 0, steps: 0, wrong: 0, bumps: 0, opt: 0, caught: 0,
+  pending: null, lastTip: '', ringStats: null,
 };
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-
-function levelConfig(L, over) {
-  const base = { cells: Math.min(3 + L, 13), study: Math.min(6 + 2 * L, 20), braid: Math.min(0.35, (L - 1) * 0.08), fog: Math.max(3.5, 7 - L * 0.4) };
-  const o = over || {};
-  return { ...base, ...(o.cells ? { cells: o.cells } : {}), ...(o.studySeconds ? { study: o.studySeconds } : {}) };
-}
+const ringCells = (n) => Math.min(3 + n, 12);
+const ringStudy = (n) => Math.min(4 + n, 10);
+const ringMonsters = (n) => (n < 2 ? 0 : n < 4 ? 1 : n < 7 ? 2 : 3);
 
 function parseRows(rows) {
   const g = rows.map((r) => [...r].map((ch) => (ch === '#' ? 1 : 0)));
-  const size = g.length, c = 2 * Math.floor((size - 1) / 2 / 2) + 1;
+  const size = g.length, c = 2 * Math.floor((size - 1) / 4) + 1;
   let gate = null;
   for (let i = 0; i < size; i++) for (const [x, y] of [[i, 0], [i, size - 1], [0, i], [size - 1, i]]) if (g[y][x] === 0) gate = { x, y };
   return { g, size, center: { x: c, y: c }, gate };
 }
 
-function buildLevel() {
-  const cfg = levelConfig(S.level, S.next);
-  S.cfg = cfg;
-  S.mode = S.level % 2 === 1 ? 'escape' : 'enter';
-  S.name = S.next?.name || '';
+let spriteTex = null;
+new THREE.TextureLoader().load('/sprites/rakshasa.png', (t) => {
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; spriteTex = t;
+}, undefined, () => {});
+
+function buildRing() {
+  const n = S.ring;
+  S.mode = n % 2 === 1 ? 'escape' : 'enter';
+  const ai = S.pending && S.pending.ring === n ? S.pending : null;
   maze = null;
-  if (S.next?.rows) { try { maze = parseRows(S.next.rows); if (!maze.gate) maze = null; } catch { maze = null; } }
+  if (ai?.rows) { try { maze = parseRows(ai.rows); if (!maze.gate) maze = null; } catch { maze = null; } }
   S.aiMaze = !!maze;
-  if (!maze) maze = makeMaze(cfg.cells, (Date.now() ^ (S.level * 9973)) >>> 0, cfg.braid);
+  S.name = ai?.name || '';
+  if (ai?.tip) S.lastTip = ai.tip;
+  if (!maze) maze = makeMaze(ringCells(n), (Date.now() ^ (n * 9973)) >>> 0, Math.min(0.3, (n - 1) * 0.06));
   if (S.mode === 'escape') { S.start = maze.center; S.goal = maze.gate; }
   else { S.start = maze.gate; S.goal = maze.center; }
   distToGoal = bfs(maze.g, S.goal);
   S.opt = distToGoal[S.start.y][S.start.x];
-  S.px = S.start.x; S.py = S.start.y; S.pitch = 0;
+  // face the first open corridor
   const d0 = DIRS.findIndex(([dx, dy]) => maze.g[S.start.y + dy]?.[S.start.x + dx] === 0);
-  S.yaw = -Math.max(0, d0) * Math.PI / 2;
-  S.tile = { ...S.start };
-  S.steps = S.wrong = S.peeks = S.bumps = 0; S.time = 0;
-  scene.fog.far = cfg.fog;
+  S.startYaw = -Math.max(0, d0) * Math.PI / 2;
+  resetToStart();
+  S.steps = S.wrong = S.bumps = S.ringPeeks = 0;
+  scene.fog.far = Math.max(3.5, 7 - n * 0.3);
 
+  if (monsters) { monsters.dispose(); monsters = null; }
   if (world) { scene.remove(world); world.traverse((o) => o.geometry?.dispose()); }
   world = new THREE.Group();
   const { g, size } = maze;
@@ -149,12 +157,26 @@ function buildLevel() {
   goalMarker.position.set(S.goal.x, 0.6, S.goal.y);
   world.add(goalMarker);
   scene.add(world);
+  const count = ringMonsters(n);
+  if (count) {
+    try {
+      monsters = new Monsters(scene, maze.g, { count, speed: Math.min(1.6, 0.9 + n * 0.06), avoid: S.start, avoidRadius: 4, seed: (Date.now() ^ n) >>> 0, texture: spriteTex });
+    } catch (e) { console.warn('monsters off', e); monsters = null; }
+  }
   placeCamera();
   updateHud();
 }
 
-function placeCamera() {
-  camera.position.set(S.px, EYE, S.py);
+function resetToStart() {
+  S.px = S.start.x; S.py = S.start.y; S.yaw = S.startYaw; S.pitch = 0;
+  S.tile = { ...S.start };
+  S.trail = [{ ...S.start }];
+}
+
+let bobT = 0, bobPhase = 0, shakeUntil = 0;
+function placeCamera(now = 0) {
+  const shake = now < shakeUntil ? (Math.random() - 0.5) * 0.05 : 0;
+  camera.position.set(S.px + shake, EYE + Math.sin(bobPhase) * 0.022, S.py + shake);
   camera.rotation.set(S.pitch, S.yaw, 0, 'YXZ');
   torch.position.set(S.px, EYE + 0.1, S.py);
 }
@@ -170,7 +192,7 @@ function blocked(x, y) {
     }
   return false;
 }
-let lastBump = 0;
+let lastBump = 0, lastStepSound = 0;
 function step(dt, now) {
   const fwd = input.fwd(), turn = input.turn();
   S.yaw -= turn * TURN * dt;
@@ -178,20 +200,35 @@ function step(dt, now) {
     const sp = fwd * SPEED * dt;
     const dx = -Math.sin(S.yaw) * sp, dy = -Math.cos(S.yaw) * sp;
     let hit = false;
+    const ox = S.px, oy = S.py;
     if (!blocked(S.px + dx, S.py)) S.px += dx; else hit = true;
     if (!blocked(S.px, S.py + dy)) S.py += dy; else hit = true;
-    if (hit && now - lastBump > 600) {
-      lastBump = now; S.bumps++; navigator.vibrate?.(20);
-      const f = $('flash'); f.style.opacity = .18; setTimeout(() => (f.style.opacity = 0), 90);
+    const moved = Math.hypot(S.px - ox, S.py - oy);
+    if (moved > 0.0005) {
+      bobPhase += moved * 9;
+      if (now - lastStepSound > 330) { lastStepSound = now; sfx.step(); }
+    }
+    if (hit && moved < Math.abs(sp) * 0.3 && now - lastBump > 600) {
+      lastBump = now; S.bumps++; navigator.vibrate?.(20); sfx.bump();
+      const f = $('flash'); f.style.opacity = .15; setTimeout(() => (f.style.opacity = 0), 90);
     }
   }
   const tx = Math.round(S.px), ty = Math.round(S.py);
   if (tx !== S.tile.x || ty !== S.tile.y) {
     if (distToGoal[ty]?.[tx] > distToGoal[S.tile.y][S.tile.x]) S.wrong++;
-    S.steps++; S.tile = { x: tx, y: ty };
-    if (tx === S.goal.x && ty === S.goal.y) win();
+    S.steps++; S.tile = { x: tx, y: ty }; S.trail.push({ x: tx, y: ty });
+    if (tx === S.goal.x && ty === S.goal.y) return clearRing();
   }
-  placeCamera();
+  if (monsters) {
+    if (monsters.update(dt, S.px, S.py) === 'caught') return caught(now);
+    const near = monsters.nearest(S.px, S.py);
+    $('vignette').style.opacity = near < 3 ? Math.min(0.55, (3 - near) / 4) * (0.75 + 0.25 * Math.sin(now / 120)) : 0;
+  }
+  // clock
+  S.clock -= dt;
+  if (S.clock <= 5 && Math.ceil(S.clock) !== Math.ceil(S.clock + dt)) sfx.tick();
+  if (S.clock <= 0) { S.clock = 0; return gameOver(); }
+  placeCamera(now);
 }
 
 // ---------- input: joystick, drag-to-look, keyboard ----------
@@ -213,15 +250,15 @@ function setStick(e) {
   if (Math.abs(stick.x) < 0.12) stick.x = 0;
   if (Math.abs(stick.y) < 0.12) stick.y = 0;
 }
-stickEl.addEventListener('pointerdown', (e) => { e.preventDefault(); stick.id = e.pointerId; stickEl.setPointerCapture(e.pointerId); setStick(e); });
+stickEl.addEventListener('pointerdown', (e) => { e.preventDefault(); sfx.unlock(); stick.id = e.pointerId; stickEl.setPointerCapture(e.pointerId); setStick(e); });
 stickEl.addEventListener('pointermove', (e) => { if (e.pointerId === stick.id) setStick(e); });
 const release = (e) => { if (e.pointerId !== stick.id) return; stick.id = null; stick.x = stick.y = 0; knob.style.transform = ''; };
 stickEl.addEventListener('pointerup', release); stickEl.addEventListener('pointercancel', release);
 
 const view = $('view'); let look = null;
-view.addEventListener('pointerdown', (e) => { look = { id: e.pointerId, x: e.clientX, y: e.clientY }; view.setPointerCapture(e.pointerId); });
+view.addEventListener('pointerdown', (e) => { if (e.target.closest('#mute')) return; look = { id: e.pointerId, x: e.clientX, y: e.clientY }; view.setPointerCapture(e.pointerId); });
 view.addEventListener('pointermove', (e) => {
-  if (!look || e.pointerId !== look.id || !S.running) return;
+  if (!look || e.pointerId !== look.id || S.phase !== 'walk') return;
   S.yaw -= (e.clientX - look.x) * 0.006;
   S.pitch = Math.max(-0.5, Math.min(0.5, S.pitch - (e.clientY - look.y) * 0.004));
   look.x = e.clientX; look.y = e.clientY;
@@ -229,34 +266,57 @@ view.addEventListener('pointermove', (e) => {
 const endLook = () => { look = null; };
 view.addEventListener('pointerup', endLook); view.addEventListener('pointercancel', endLook);
 
-const KEYS = { ArrowUp: 'fwd', w: 'fwd', ArrowDown: 'back', s: 'back', ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right' };
+const KEYS = { arrowup: 'fwd', w: 'fwd', arrowdown: 'back', s: 'back', arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right' };
 window.addEventListener('keydown', (e) => {
-  const k = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];
+  sfx.unlock();
+  const k = KEYS[e.key.toLowerCase()];
   if (k) { e.preventDefault(); keys.add(k); }
   if (e.key === 'm' || e.key === 'M') peek();
+  if (e.key === 'Enter' || e.key === ' ') {
+    if (S.phase === 'study') beginWalk();
+    else if (S.phase === 'intro' || S.phase === 'over') newRun();
+  }
 });
-window.addEventListener('keyup', (e) => { const k = KEYS[e.key] || KEYS[e.key.toLowerCase?.()]; if (k) keys.delete(k); });
+window.addEventListener('keyup', (e) => { const k = KEYS[e.key.toLowerCase()]; if (k) keys.delete(k); });
 document.querySelector('[data-act="peek"]').addEventListener('pointerdown', (e) => { e.preventDefault(); peek(); });
+const muteBtn = $('mute');
+setMuted(!!store.get('chakravyuh-muted')); muteBtn.classList.toggle('off', isMuted());
+muteBtn.addEventListener('click', () => { sfx.unlock(); setMuted(!isMuted()); store.set('chakravyuh-muted', isMuted()); muteBtn.classList.toggle('off', isMuted()); });
 
-// ---------- timing / HUD ----------
-const elapsed = () => (S.running ? (performance.now() - S.t0) / 1000 : S.time);
-const finalTime = (t = elapsed()) => t + S.peeks * PEEK_SECS;
-const bestKey = () => `chakravyuh-best-${S.level}`;
+// ---------- HUD ----------
 function facing() {
   const a = ((-S.yaw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
   return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / (Math.PI / 4)) % 8];
 }
+const mult = () => Math.min(MAX_MULT, 1 + S.streak);
 function updateHud() {
-  $('h-level').textContent = S.level;
-  $('h-time').textContent = finalTime().toFixed(1);
-  const b = store.get(bestKey());
-  $('h-best').textContent = b ? b.toFixed(1) : '–';
+  $('h-ring').textContent = S.ring;
+  $('h-score').textContent = S.score;
+  $('h-clock').textContent = Math.ceil(S.clock);
+  $('h-clock').parentElement.classList.toggle('low', S.clock <= 10 && S.phase === 'walk');
   $('h-dir').textContent = facing();
   $('h-goal').textContent = S.mode === 'escape' ? 'out' : 'to the centre';
+  const st = $('streak');
+  st.textContent = `SMRITI ×${mult()}`;
+  st.classList.toggle('show', S.streak > 0 && S.phase === 'walk');
+}
+function floatText(text, color) {
+  const el = document.createElement('div');
+  el.className = 'float'; el.textContent = text; el.style.color = color;
+  $('view').appendChild(el); setTimeout(() => el.remove(), 1000);
 }
 
 // ---------- map drawing ----------
-function drawMap(cv, showYou) {
+function drawArrow(x, cx, cy, yaw, r, color) {
+  const a = Math.atan2(-Math.cos(yaw), -Math.sin(yaw));
+  x.fillStyle = color; x.strokeStyle = '#0b0806'; x.lineWidth = Math.max(1, r * 0.18); x.beginPath();
+  x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  x.lineTo(cx + Math.cos(a + 2.5) * r, cy + Math.sin(a + 2.5) * r);
+  x.lineTo(cx + Math.cos(a + Math.PI) * r * 0.35, cy + Math.sin(a + Math.PI) * r * 0.35);
+  x.lineTo(cx + Math.cos(a - 2.5) * r, cy + Math.sin(a - 2.5) * r);
+  x.closePath(); x.fill(); x.stroke();
+}
+function drawMap(cv, live) {
   const { g, size } = maze;
   const px = Math.floor(Math.min(560, window.innerWidth * 2) / size);
   cv.width = cv.height = px * size;
@@ -266,104 +326,158 @@ function drawMap(cv, showYou) {
     x.fillStyle = g[yy][xx] === 1 ? '#7a4326' : '#e9d9bd';
     x.fillRect(xx * px, yy * px, px, px);
   }
-  const dot = (p, c) => { x.fillStyle = c; x.beginPath(); x.arc((p.x + .5) * px, (p.y + .5) * px, px * .38, 0, 7); x.fill(); };
-  dot(S.goal, '#ff9a1f');
-  if (showYou) {
-    const cx = (S.px + .5) * px, cy = (S.py + .5) * px, r = px * .45;
-    const a = Math.atan2(-Math.cos(S.yaw), -Math.sin(S.yaw));
-    x.fillStyle = '#2fa864'; x.beginPath();
-    x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    x.lineTo(cx + Math.cos(a + 2.4) * r, cy + Math.sin(a + 2.4) * r);
-    x.lineTo(cx + Math.cos(a - 2.4) * r, cy + Math.sin(a - 2.4) * r);
-    x.fill();
-  } else dot(S.start, '#2fa864');
+  // goal: saffron ring
+  const gx = (S.goal.x + .5) * px, gy = (S.goal.y + .5) * px;
+  x.fillStyle = '#ff9a1f'; x.beginPath(); x.arc(gx, gy, px * .42, 0, 7); x.fill();
+  x.fillStyle = '#e9d9bd'; x.beginPath(); x.arc(gx, gy, px * .16, 0, 7); x.fill();
+  if (monsters) monsters.drawOnMap(x, px);
+  if (live) drawArrow(x, (S.px + .5) * px, (S.py + .5) * px, S.yaw, px * .48, '#2fa864');
+  else drawArrow(x, (S.start.x + .5) * px, (S.start.y + .5) * px, S.startYaw, px * .48, '#2fa864');
 }
 
 // ---------- flow ----------
 function show(id, on = true) { $(id).classList.toggle('show', on); }
-let studyTimer;
+let studyTimer, studyLeft = 0;
+function newRun() {
+  sfx.unlock(); ambient(true);
+  show('intro', false); show('done', false);
+  Object.assign(S, { ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
+  startStudy();
+}
 function startStudy() {
-  buildLevel();
-  const label = S.mode === 'escape' ? 'Escape the Chakravyuh' : 'Reach the centre';
-  $('s-title').textContent = `Level ${S.level} · ${S.name ? S.name : label}${S.aiMaze ? ' · designed by AI' : ''}`;
+  S.phase = 'study';
+  buildRing();
+  const label = S.mode === 'escape' ? 'Escape' : 'Reach the centre';
+  $('s-title').textContent = `Ring ${S.ring} · ${S.name || label}${S.aiMaze ? ' · designed by AI' : ''}`;
+  $('s-goal').textContent = S.mode === 'escape' ? 'Way out' : 'The centre';
+  $('s-mon').style.display = monsters ? '' : 'none';
+  $('s-guru').innerHTML = S.lastTip ? `<b>Guru:</b> ${S.lastTip.replace(/</g, '&lt;')}` : '';
   drawMap($('map'), false);
   show('study');
-  let n = S.cfg.study;
-  $('s-count').textContent = n;
+  studyLeft = ringStudy(S.ring);
+  $('s-count').textContent = studyLeft;
   clearInterval(studyTimer);
-  studyTimer = setInterval(() => { n--; $('s-count').textContent = n; if (n <= 0) beginWalk(); }, 1000);
+  studyTimer = setInterval(() => { studyLeft--; $('s-count').textContent = studyLeft; if (studyLeft <= 0) beginWalk(); }, 1000);
 }
 function beginWalk() {
+  if (S.phase !== 'study') return;
   clearInterval(studyTimer);
   show('study', false);
-  S.running = true; S.t0 = performance.now();
+  S.phase = 'walk';
+  S.ringT0 = performance.now();
+  if (studyLeft > 0) { S.clock += studyLeft; floatText(`+${studyLeft}s early`, '#5fd38a'); }
   toast(S.mode === 'escape' ? 'Find the way out' : 'Find the centre');
+  prefetchNext();
+  updateHud();
 }
 let peekTimer;
 function peek() {
-  if (!S.running || $('peek').classList.contains('show')) return;
-  S.peeks++; updateHud();
+  if (S.phase !== 'walk' || $('peek').classList.contains('show')) return;
+  S.peeks++; S.ringPeeks++; S.clock = Math.max(0.1, S.clock - PEEK_COST);
+  sfx.peek(); floatText(`−${PEEK_COST}s`, '#ff5a4a');
+  if (S.streak) { S.streak = 0; toast('Streak broken'); }
   drawMap($('peekmap'), true);
   show('peek');
   clearTimeout(peekTimer);
-  peekTimer = setTimeout(() => show('peek', false), 2000);
+  peekTimer = setTimeout(() => show('peek', false), 1800);
+  updateHud();
 }
-function win() {
-  S.running = false; S.time = (performance.now() - S.t0) / 1000;
-  const ft = finalTime(S.time);
-  const prev = store.get(bestKey());
-  const isBest = !prev || ft < prev;
-  if (isBest) store.set(bestKey(), ft);
-  $('d-title').textContent = `Level ${S.level} cleared${isBest ? ' · new best' : ''}`;
-  $('d-score').textContent = `${ft.toFixed(1)}s`;
-  $('d-time').textContent = `${S.time.toFixed(1)}s`;
-  $('d-peeks').textContent = `${S.peeks} (+${S.peeks * PEEK_SECS}s)`;
-  $('d-best').textContent = `${Math.min(ft, prev || ft).toFixed(1)}s`;
-  $('d-steps').textContent = S.steps;
-  $('d-opt').textContent = S.opt;
-  $('d-wrong').textContent = S.wrong;
-  $('d-tip').textContent = 'The Guru is reading your path and designing your next maze…';
-  $('next').disabled = true;
+function caught(now) {
+  S.caught++; S.clock = Math.max(0.1, S.clock - CAUGHT_COST);
+  sfx.caught(); navigator.vibrate?.([60, 40, 90]);
+  shakeUntil = now + 350; $('view').classList.remove('shake'); void $('view').offsetWidth; $('view').classList.add('shake');
+  const f = $('flash'); f.style.opacity = .5; setTimeout(() => (f.style.opacity = 0), 200);
+  floatText(`Caught! −${CAUGHT_COST}s`, '#ff5a4a');
+  resetToStart();
+  if (S.streak) S.streak = 0;
+  updateHud();
+}
+function clearRing() {
+  const secs = (performance.now() - S.ringT0) / 1000;
+  const clean = S.ringPeeks === 0;
+  if (clean) S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
+  const pts = 100 * S.ring * mult();
+  S.score += pts;
+  S.ringStats.push({ ring: S.ring, seconds: +secs.toFixed(1), steps: S.steps, shortest: S.opt, wrongSteps: S.wrong, peeks: S.ringPeeks, bumps: S.bumps });
+  sfx.clear(); if (clean && S.streak > 1) sfx.streak(S.streak);
+  navigator.vibrate?.(40);
+  const prevRing = S.ring;
+  S.ring++;
+  S.phase = 'study';
+  // time bonus sized to the next ring
+  const bonus = Math.round(6 + ringCells(S.ring) * 2.2);
+  S.clock += bonus;
+  floatText(`+${pts}  +${bonus}s`, '#ff9a1f');
+  if (S.clock - bonus < 3) setTimeout(() => toast('Narrow escape!'), 250);
+  $('vignette').style.opacity = 0;
+  setTimeout(() => { if (S.phase === 'study' && S.ring === prevRing + 1) startStudy(); }, 650);
+  updateHud();
+}
+function gameOver() {
+  S.phase = 'over';
+  clearInterval(studyTimer);
+  sfx.gameOver(); ambient(false);
+  $('vignette').style.opacity = 0;
+  const best = store.get('chakravyuh-best-run') || 0;
+  const isBest = S.score > best;
+  if (isBest) store.set('chakravyuh-best-run', S.score);
+  $('d-title').textContent = S.ring > 1 ? `Abhimanyu fell in ring ${S.ring}` : 'Abhimanyu fell in the first ring';
+  $('d-score').textContent = S.score;
+  $('d-best').textContent = isBest ? 'New best!' : `Best ${best}`;
+  $('d-rings').textContent = S.ring - 1;
+  $('d-streak').textContent = S.bestStreak;
+  $('d-peeks').textContent = S.peeks;
+  $('d-tip').textContent = S.lastTip || 'Chunk the route into three parts and remember only the turns in each.';
+  drawReplay($('d-map'));
   show('done');
   updateHud();
-  askGuru().then((j) => {
-    $('d-tip').textContent = j.tip;
-    S.next = j;
-    $('next').disabled = false;
-  });
+}
+function drawReplay(cv) {
+  const { g, size } = maze;
+  const px = Math.floor(420 / size);
+  cv.width = cv.height = px * size;
+  const x = cv.getContext('2d');
+  for (let yy = 0; yy < size; yy++) for (let xx = 0; xx < size; xx++) { x.fillStyle = g[yy][xx] === 1 ? '#5a3220' : '#d9c8aa'; x.fillRect(xx * px, yy * px, px, px); }
+  const line = (pts, color, w, dash) => { x.strokeStyle = color; x.lineWidth = w; x.lineJoin = x.lineCap = 'round'; x.setLineDash(dash); x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo : x.moveTo).call(x, (p.x + .5) * px, (p.y + .5) * px)); x.stroke(); };
+  // shortest path: walk downhill on distToGoal from the start
+  const opt = [{ ...S.start }]; let c = { ...S.start };
+  while (distToGoal[c.y][c.x] > 0) { const nx = DIRS.map(([dx, dy]) => ({ x: c.x + dx, y: c.y + dy })).find((p) => distToGoal[p.y]?.[p.x] === distToGoal[c.y][c.x] - 1); if (!nx) break; opt.push(nx); c = nx; }
+  line(opt, '#ff9a1f', px * .28, [px * .3, px * .25]);
+  line(S.trail || [], '#2fa864', px * .3, []);
+  x.setLineDash([]);
+  x.fillStyle = '#ff9a1f'; x.beginPath(); x.arc((S.goal.x + .5) * px, (S.goal.y + .5) * px, px * .4, 0, 7); x.fill();
+  x.fillStyle = '#ff3b2a'; x.beginPath(); x.arc((S.px + .5) * px, (S.py + .5) * px, px * .35, 0, 7); x.fill();
 }
 
-// ---------- AI Guru ----------
-function runStats() {
-  return {
-    level: S.level, mode: S.mode, cells: S.cfg.cells, seconds: +S.time.toFixed(1),
-    steps: S.steps, shortest: S.opt, wrongSteps: S.wrong, peeks: S.peeks, bumps: S.bumps,
-    studySeconds: S.cfg.study, braid: S.cfg.braid,
-  };
-}
-function localGuru(st) {
+// ---------- AI Guru: designs the next ring while you walk this one ----------
+function localTip(st) {
   const eff = st.shortest / Math.max(st.steps, 1);
-  let tip;
-  if (st.peeks === 0 && eff > 0.9) tip = 'Perfect recall. Next time, say the turns out loud while you study: "left, right, right".';
-  else if (st.peeks > 2) tip = 'You leaned on the map. While studying, trace the path with your finger and count the turns.';
-  else if (st.bumps > 4) tip = 'Many walls hit. Glance at FACING before each turn so it matches the map in your head.';
-  else if (eff < 0.6) tip = 'Long detours. Memorise landmarks: "first dead end on the left, then straight past two openings".';
-  else tip = 'Good run. Chunk the route into three parts and remember only the turns in each.';
-  const great = eff > 0.85 && st.peeks === 0;
-  return { tip, cells: Math.min(st.cells + (great ? 2 : 1), 13), studySeconds: Math.max(6, Math.min(20, st.studySeconds + (st.peeks > 1 ? 4 : 1))), source: 'local' };
+  if (st.peeks === 0 && eff > 0.9) return 'Perfect recall. Say the turns out loud while you study: "left, right, right".';
+  if (st.peeks > 1) return 'You leaned on the map. Trace the path with your finger and count the turns.';
+  if (eff < 0.6) return 'Long detours. Memorise landmarks: "first dead end on the left, then straight past two openings".';
+  return 'Chunk the route into three parts and remember only the turns in each.';
 }
-async function askGuru() {
-  const st = runStats();
+async function prefetchNext() {
+  const ring = S.ring + 1;
+  const last = S.ringStats?.[S.ringStats.length - 1];
+  if (!last) return; // first ring: nothing to learn from yet
+  const cells = ringCells(ring);
+  const body = {
+    level: ring, mode: ring % 2 === 1 ? 'escape' : 'enter', cells: Math.max(4, cells - 1),
+    seconds: last.seconds, steps: last.steps, shortest: last.shortest, wrongSteps: last.wrongSteps,
+    peeks: last.peeks, bumps: last.bumps, studySeconds: ringStudy(ring), braid: 0.1,
+  };
+  S.lastTip = localTip(last);
   try {
-    const ctl = new AbortController();
-    const to = setTimeout(() => ctl.abort(), 12000);
-    const r = await fetch('/api/guru', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(st), signal: ctl.signal });
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 12000);
+    const r = await fetch('/api/guru', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal });
     clearTimeout(to);
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) return;
     const j = await r.json();
-    if (!j.tip) throw new Error('no tip');
-    return j;
-  } catch { return localGuru(st); }
+    if (S.ring !== ring - 1 && S.ring !== ring) return; // run moved on
+    S.pending = { ...j, ring };
+    if (j.tip) S.lastTip = j.tip;
+  } catch {}
 }
 
 function toast(msg) {
@@ -371,23 +485,25 @@ function toast(msg) {
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1600);
 }
 
-$('start').addEventListener('click', () => { show('intro', false); startStudy(); });
+$('start').addEventListener('click', newRun);
 $('ready').addEventListener('click', beginWalk);
-$('next').addEventListener('click', () => { show('done', false); S.level++; startStudy(); });
+$('again').addEventListener('click', newRun);
+const best0 = store.get('chakravyuh-best-run');
+if (best0) $('i-best').textContent = `Your best: ${best0}`;
 
 // ---------- loop ----------
 let last = performance.now(), hudT = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (S.running) step(dt, now);
+  if (S.phase === 'walk') step(dt, now);
   if (goalMarker) { goalMarker.rotation.y = now / 600; goalMarker.position.y = 0.6 + Math.sin(now / 400) * 0.04; }
   torch.intensity = 2.1 + Math.sin(now / 90) * 0.12 + Math.sin(now / 37) * 0.08;
-  if (S.running && now - hudT > 100) { hudT = now; updateHud(); }
+  if (S.phase === 'walk' && now - hudT > 100) { hudT = now; updateHud(); }
   renderer.render(scene, camera);
 }
 resize();
-buildLevel();
+buildRing();
 requestAnimationFrame(loop);
 // debug hook for automated checks
-window.__ck = { S, get maze() { return maze; } };
+window.__ck = { S, get maze() { return maze; }, get monsters() { return monsters; } };

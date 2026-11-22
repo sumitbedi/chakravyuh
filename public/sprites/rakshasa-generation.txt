@@ -1,0 +1,4 @@
+Generated with built-in image_gen; transparent_background=true.
+Prompt: Front-facing full-body standing Rakshasa demon guard, Indian mythology, horns, fangs, dark blue-green skin, gold armlets, heavy mace, glowing red eyes. Early-1990s FPS pixel art, crisp chunky square pixels, limited palette, strong silhouette, dark outlines, simple pixel shading, no antialiasing. Entire mace and horns within square frame, transparent background, no scenery, floor, shadow, text, border or watermark.
+Processing: crop alpha bounds; nearest-neighbor resize to 115 pixels tall; center horizontally on transparent 128x128 RGBA canvas, feet at bottom edge.
+Verification: Pillow reopened PNG; 128x128 RGBA; all four corner alpha values 0. Claude: check in-game at 390px viewport for readability.
