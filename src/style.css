@@ -101,3 +101,26 @@ h2 { font-size: 44px; color: var(--saffron); font-variant-numeric: tabular-nums;
 #open.show { display: block; }
 @keyframes glow { 50% { box-shadow: 0 0 0 10px #ffd34d22, 0 6px 18px #000a; } }
 .bar.gold { width: 14px; height: 6px; background: #ffd34d; border: 1px solid #0b0806; display: inline-block; }
+
+#fs { display: none; position: absolute; left: 54px; top: 12px; width: 34px; height: 34px; border-radius: 50%; background: #000a; color: var(--ink); border: 1px solid var(--line); font-size: 16px; cursor: pointer; }
+#lockhint { display: none; position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); font-size: 12px; color: var(--muted); background: #000a; padding: 6px 10px; border-radius: 8px; pointer-events: none; }
+
+/* Desktop / laptop: full-window view, HUD as a slim overlay bar */
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  #app { max-width: none; }
+  #view { cursor: crosshair; }
+  #fs { display: block; }
+  body.walking:not(.locked) #lockhint { display: block; }
+  #panel { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; padding: 14px 28px 18px; background: linear-gradient(to top, #0b0806f0 30%, #0b080600); border-top: 0; pointer-events: none; }
+  #panel > * { pointer-events: auto; }
+  #hud { display: flex; gap: 28px; justify-self: start; }
+  .stat { align-items: flex-start; }
+  #goalline { margin: 0; font-size: 13px; justify-self: center; }
+  #coach { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); margin: 0; white-space: nowrap; }
+  #controls { justify-self: end; }
+  #stick { display: none; }
+  .btn.peek { width: auto; height: 44px; border-radius: 10px; padding: 0 16px; flex-direction: row; gap: 8px; cursor: pointer; }
+  #open { bottom: 110px; }
+  .overlay .card { max-width: 460px; }
+  #map, #peekmap { width: min(100%, 58dvh); }
+}

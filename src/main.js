@@ -20,7 +20,7 @@ scene.add(torch);
 function resize() {
   const v = $('view');
   const w = v.clientWidth, h = v.clientHeight;
-  const scale = Math.max(1, w / 300); // ~300px wide internal buffer → chunky pixels
+  const scale = Math.max(1, w / (w > 900 ? 480 : 300)); // low-res internal buffer → chunky pixels
   renderer.setSize(Math.round(w / scale), Math.round(h / scale), false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -324,6 +324,7 @@ window.addEventListener('keydown', (e) => {
   const k = KEYS[e.key.toLowerCase()];
   if (k) { e.preventDefault(); keys.add(k); }
   if (e.key === 'm' || e.key === 'M') peek();
+  if ((e.key === 'f' || e.key === 'F') && desktop.matches) toggleFullscreen();
   if ((e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') && S.phase === 'walk' && S.canOpen) { e.preventDefault(); openSecret(); return; }
   if (e.key === 'Enter' || e.key === ' ') {
     if (S.phase === 'study') beginWalk();
@@ -345,6 +346,23 @@ function openSecret() {
   floatText('Secret passage!', '#ffd34d');
   S.secretsOpened = (S.secretsOpened || 0) + 1;
 }
+// ---------- desktop: full screen + pointer-lock mouse look ----------
+const desktop = matchMedia('(min-width: 900px) and (hover: hover) and (pointer: fine)');
+if (desktop.matches) $('coach').textContent = 'W A S D or arrows to move · click, then move the mouse to look';
+function toggleFullscreen() {
+  try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch {}
+}
+$('fs').addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
+document.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
+$('three').addEventListener('click', () => {
+  if (desktop.matches && S.phase === 'walk' && document.pointerLockElement !== $('three')) $('three').requestPointerLock?.()?.catch?.(() => {});
+});
+document.addEventListener('pointerlockchange', () => document.body.classList.toggle('locked', document.pointerLockElement === $('three')));
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement !== $('three') || S.phase !== 'walk') return;
+  S.yaw -= e.movementX * 0.0025;
+  S.pitch = Math.max(-0.5, Math.min(0.5, S.pitch - e.movementY * 0.002));
+});
 const muteBtn = $('mute');
 setMuted(!!store.get('chakravyuh-muted')); muteBtn.classList.toggle('off', isMuted());
 muteBtn.addEventListener('click', () => { sfx.unlock(); setMuted(!isMuted()); store.set('chakravyuh-muted', isMuted()); muteBtn.classList.toggle('off', isMuted()); });
@@ -421,6 +439,8 @@ function newRun() {
 }
 function startStudy() {
   S.phase = 'study';
+  document.body.classList.remove('walking');
+  try { document.exitPointerLock?.(); } catch {}
   $('open').classList.remove('show');
   buildRing();
   const label = S.mode === 'escape' ? 'Escape' : 'Reach the centre';
@@ -440,6 +460,8 @@ function beginWalk() {
   clearInterval(studyTimer);
   show('study', false);
   S.phase = 'walk';
+  document.body.classList.add('walking');
+  if (desktop.matches) { try { $('three').requestPointerLock?.()?.catch?.(() => {}); } catch {} }
   S.ringT0 = performance.now();
   if (studyLeft > 0) { S.clock += studyLeft; floatText(`+${studyLeft}s early`, '#5fd38a'); }
   toast(S.mode === 'escape' ? 'Find the way out' : 'Find the centre');
@@ -497,6 +519,8 @@ function clearRing() {
 }
 function gameOver() {
   S.phase = 'over';
+  document.body.classList.remove('walking');
+  try { document.exitPointerLock?.(); } catch {}
   $('open').classList.remove('show');
   clearInterval(studyTimer);
   sfx.gameOver(); ambient(false);
