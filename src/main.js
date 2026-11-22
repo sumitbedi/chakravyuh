@@ -590,6 +590,16 @@ $('share').addEventListener('click', async () => {
   try { if (navigator.share) { await navigator.share({ title: 'Chakravyuh', text, url }); return; } } catch { return; }
   try { await navigator.clipboard.writeText(`${text} ${url}`); toast('Copied, paste it to a friend'); } catch { toast(url); }
 });
+// ---------- installable app (PWA) ----------
+if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+let installEvt = null;
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (!standalone) $('install').hidden = false; });
+$('install').addEventListener('click', async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; $('install').hidden = true; });
+window.addEventListener('appinstalled', () => { $('install').hidden = true; toast('Installed. Open Chakravyuh from your home screen'); });
+if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) $('ios-hint').hidden = false;
 const best0 = store.get('chakravyuh-best-run');
 if (best0) $('i-best').textContent = `Your best: ${best0}`;
 
