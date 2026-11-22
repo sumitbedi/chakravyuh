@@ -96,3 +96,8 @@ h2 { font-size: 44px; color: var(--saffron); font-variant-numeric: tabular-nums;
 #coach { display: none; text-align: center; font-size: 12px; color: #1a0f05; background: var(--saffron); border-radius: 8px; padding: 6px 10px; margin: 2px auto 8px; max-width: 330px; animation: nudge 1.2s ease-in-out infinite; }
 #coach.show { display: block; }
 @keyframes nudge { 50% { transform: translateY(3px); } }
+
+#open { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: none; font-family: var(--font); font-size: 14px; letter-spacing: .08em; font-weight: 700; color: #1a0f05; background: #ffd34d; border: 0; border-radius: 999px; padding: 13px 22px; box-shadow: 0 0 0 4px #ffd34d44, 0 6px 18px #000a; animation: glow 1s ease-in-out infinite; white-space: nowrap; }
+#open.show { display: block; }
+@keyframes glow { 50% { box-shadow: 0 0 0 10px #ffd34d22, 0 6px 18px #000a; } }
+.bar.gold { width: 14px; height: 6px; background: #ffd34d; border: 1px solid #0b0806; display: inline-block; }

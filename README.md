@@ -11,11 +11,12 @@ Chakravyuh is a first-person memory maze for your phone. Each ring shows you its
 - **The clock never stops.** Clearing a ring adds time sized to the next ring. Peeking at the map costs 3 s, and getting caught costs 8 s and sends you back to the ring's start.
 - **Smriti streak.** Clearing rings without peeking raises your multiplier (up to ×5). One peek resets it.
 - **Endless rings.** Rings alternate between escaping to the edge and reaching the centre. They grow and gain guards as you go.
+- **Secret passages.** Gold paintings on the study map mark walls that hide shortcuts. Face one in the maze and tap OPEN, and the wall slides away. You only find it if you remember where it was. (Idea from a mentor at the event.)
 - **Learn from failure.** At game over you see your walked route against the shortest route, with one coaching tip, spoken aloud.
 
 ## Where the AI is
 - **Claude designs your next ring while you walk this one.** `api/guru.js` sends your last ring's stats (time, wrong turns, peeks, path efficiency) to Claude Haiku 5.5. Claude returns a new maze as ASCII, a Mahabharata formation name for it (Krauncha, Makara, Garuda…), a study time and one memory tip. The server checks the maze before the game uses it (size, a single gate, centre reachable by BFS) and asks again once if it fails. Rings Claude designed are labelled "designed by AI".
-- **AI-generated art.** The sandstone wall, floor and ceiling textures and the Rakshasa sprite were made with image generation.
+- **AI-generated art.** The sandstone wall, floor and ceiling textures, the Rakshasa sprite and the Madhubani painting were made with image generation.
 - **Built with coding agents.** Claude Code (lead) and OpenAI Codex ("Astra": audio engine, monster engine, Guru endpoint, art, research, independent code review).
 
 ## Built with

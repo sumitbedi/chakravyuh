@@ -101,6 +101,39 @@ function parseRows(rows) {
 }
 
 let spriteTex = null;
+function paintingFallback() {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 48;
+  const x = c.getContext('2d');
+  x.fillStyle = '#c9971c'; x.fillRect(0, 0, 64, 48);
+  x.fillStyle = '#7a1a10'; x.fillRect(5, 5, 54, 38);
+  x.strokeStyle = '#ffcc4d'; x.lineWidth = 2;
+  for (let r = 4; r < 17; r += 4) { x.beginPath(); x.arc(32, 24, r, 0, 7); x.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.magFilter = t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const paintMat = new THREE.MeshLambertMaterial({ map: paintingFallback() });
+new THREE.TextureLoader().load('/sprites/painting.png', (t) => {
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+  paintMat.map = t; paintMat.needsUpdate = true;
+}, undefined, () => {});
+// secret passages: walls whose removal saves the most walking
+function findSecrets(g, dist, count) {
+  const size = g.length, out = [];
+  for (let y = 1; y < size - 1; y++) for (let x = 1; x < size - 1; x++) {
+    if (g[y][x] !== 1) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1]]) {
+      const a = { x: x - dx, y: y - dy }, b = { x: x + dx, y: y + dy };
+      if (g[a.y][a.x] !== 0 || g[b.y][b.x] !== 0) continue;
+      const da = dist[a.y][a.x], db = dist[b.y][b.x];
+      if (!Number.isFinite(da) || !Number.isFinite(db)) continue;
+      const gain = Math.abs(da - db) - 2;
+      if (gain >= 6) out.push({ x, y, from: da > db ? a : b, gain, open: false });
+    }
+  }
+  out.sort((p, q) => q.gain - p.gain || Math.random() - 0.5);
+  const pick = [];
+  for (const c of out) { if (pick.length >= count) break; if (pick.every((p) => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) > 3)) pick.push(c); }
+  return pick;
+}
 new THREE.TextureLoader().load('/sprites/rakshasa.png', (t) => {
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace; spriteTex = t;
 }, undefined, () => {});
@@ -140,6 +173,16 @@ function buildRing() {
   const m = new THREE.Matrix4();
   walls.forEach(([x, y], i) => { m.makeTranslation(x, WALL_H / 2, y); inst.setMatrixAt(i, m); });
   world.add(inst);
+  S.wallMesh = inst; S.wallIndex = new Map(walls.map(([x, y], i) => [y * size + x, i]));
+  S.secrets = findSecrets(g, bfs(g, S.goal), n < 3 ? 1 : 2);
+  for (const sec of S.secrets) {
+    const dx = sec.from.x - sec.x, dy = sec.from.y - sec.y;
+    const pm = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.42), paintMat);
+    pm.position.set(sec.x + dx * 0.505, 0.68, sec.y + dy * 0.505);
+    pm.rotation.y = Math.atan2(dx, dy);
+    sec.mesh = pm; world.add(pm);
+  }
+  S.canOpen = null; S.sliding = null;
   const span = size + 6;
   mats.floor.map.repeat.set(span, span); mats.ceil.map.repeat.set(span, span);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor);
@@ -221,6 +264,13 @@ function step(dt, now) {
     S.steps++; S.tile = { x: tx, y: ty }; S.trail.push({ x: tx, y: ty });
     if (tx === S.goal.x && ty === S.goal.y) return clearRing();
   }
+  S.canOpen = null;
+  for (const sec of S.secrets || []) {
+    if (sec.open) continue;
+    const ddx = sec.x - S.px, ddy = sec.y - S.py, d = Math.hypot(ddx, ddy);
+    if (d < 1.25 && Math.hypot(sec.from.x - S.px, sec.from.y - S.py) < 0.7 && (-Math.sin(S.yaw) * ddx - Math.cos(S.yaw) * ddy) / d > 0.55) S.canOpen = sec;
+  }
+  $('open').classList.toggle('show', !!S.canOpen);
   if (monsters) {
     if (monsters.update(dt, S.px, S.py) === 'caught') return caught(now);
     const near = monsters.nearest(S.px, S.py);
@@ -274,6 +324,7 @@ window.addEventListener('keydown', (e) => {
   const k = KEYS[e.key.toLowerCase()];
   if (k) { e.preventDefault(); keys.add(k); }
   if (e.key === 'm' || e.key === 'M') peek();
+  if ((e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') && S.phase === 'walk' && S.canOpen) { e.preventDefault(); openSecret(); return; }
   if (e.key === 'Enter' || e.key === ' ') {
     if (S.phase === 'study') beginWalk();
     else if (S.phase === 'intro' || S.phase === 'over') newRun();
@@ -281,6 +332,19 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => { const k = KEYS[e.key.toLowerCase()]; if (k) keys.delete(k); });
 document.querySelector('[data-act="peek"]').addEventListener('pointerdown', (e) => { e.preventDefault(); peek(); });
+$('open').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); openSecret(); });
+function openSecret() {
+  const sec = S.canOpen; if (!sec || sec.open || S.phase !== 'walk') return;
+  sec.open = true; S.canOpen = null; $('open').classList.remove('show');
+  maze.g[sec.y][sec.x] = 0;
+  distToGoal = bfs(maze.g, S.goal);
+  world.remove(sec.mesh); sec.mesh.geometry.dispose();
+  S.sliding = { idx: S.wallIndex.get(sec.y * maze.size + sec.x), x: sec.x, y: sec.y, t0: performance.now() };
+  sfx.bump(); setTimeout(() => sfx.streak(4), 150); navigator.vibrate?.([30, 30, 30]);
+  shakeUntil = performance.now() + 450;
+  floatText('Secret passage!', '#ffd34d');
+  S.secretsOpened = (S.secretsOpened || 0) + 1;
+}
 const muteBtn = $('mute');
 setMuted(!!store.get('chakravyuh-muted')); muteBtn.classList.toggle('off', isMuted());
 muteBtn.addEventListener('click', () => { sfx.unlock(); setMuted(!isMuted()); store.set('chakravyuh-muted', isMuted()); muteBtn.classList.toggle('off', isMuted()); });
@@ -332,6 +396,14 @@ function drawMap(cv, live) {
   const gx = (S.goal.x + .5) * px, gy = (S.goal.y + .5) * px;
   x.fillStyle = '#ff9a1f'; x.beginPath(); x.arc(gx, gy, px * .42, 0, 7); x.fill();
   x.fillStyle = '#e9d9bd'; x.beginPath(); x.arc(gx, gy, px * .16, 0, 7); x.fill();
+  for (const sec of S.secrets || []) {
+    if (sec.open) continue;
+    const dx = sec.from.x - sec.x, dy = sec.from.y - sec.y;
+    const cx = (sec.x + .5 + dx * .32) * px, cy = (sec.y + .5 + dy * .32) * px;
+    const w = dx ? px * .26 : px * .8, h = dx ? px * .8 : px * .26;
+    x.fillStyle = '#ffd34d'; x.strokeStyle = '#0b0806'; x.lineWidth = Math.max(1, px * .08);
+    x.fillRect(cx - w / 2, cy - h / 2, w, h); x.strokeRect(cx - w / 2, cy - h / 2, w, h);
+  }
   if (monsters) monsters.drawOnMap(x, px);
   if (live) drawArrow(x, (S.px + .5) * px, (S.py + .5) * px, S.yaw, px * .48, '#2fa864');
   else drawArrow(x, (S.start.x + .5) * px, (S.start.y + .5) * px, S.startYaw, px * .48, '#2fa864');
@@ -344,11 +416,12 @@ function newRun() {
   sfx.unlock(); ambient(true);
   try { speechSynthesis?.cancel(); } catch {}
   show('intro', false); show('done', false);
-  Object.assign(S, { prefetch: null, ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
+  Object.assign(S, { secretsOpened: 0, prefetch: null, ring: 1, clock: START_CLOCK, score: 0, streak: 0, bestStreak: 0, peeks: 0, caught: 0, pending: null, lastTip: '', ringStats: [] });
   startStudy();
 }
 function startStudy() {
   S.phase = 'study';
+  $('open').classList.remove('show');
   buildRing();
   const label = S.mode === 'escape' ? 'Escape' : 'Reach the centre';
   $('s-title').textContent = `Ring ${S.ring} · ${S.name || label}${S.aiMaze ? ' · designed by AI' : ''}`;
@@ -424,6 +497,7 @@ function clearRing() {
 }
 function gameOver() {
   S.phase = 'over';
+  $('open').classList.remove('show');
   clearInterval(studyTimer);
   sfx.gameOver(); ambient(false);
   $('vignette').style.opacity = 0;
@@ -525,6 +599,12 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (S.phase === 'walk') step(dt, now);
+  if (S.sliding && S.wallMesh) {
+    const k = Math.min(1, (now - S.sliding.t0) / 550), mm = new THREE.Matrix4();
+    if (k < 1) mm.makeTranslation(S.sliding.x, WALL_H / 2 - k * WALL_H * 1.02, S.sliding.y); else mm.makeScale(0, 0, 0);
+    S.wallMesh.setMatrixAt(S.sliding.idx, mm); S.wallMesh.instanceMatrix.needsUpdate = true;
+    if (k >= 1) S.sliding = null;
+  }
   if (goalMarker) { goalMarker.rotation.y = now / 600; goalMarker.position.y = 0.6 + Math.sin(now / 400) * 0.04; }
   torch.intensity = 2.1 + Math.sin(now / 90) * 0.12 + Math.sin(now / 37) * 0.08;
   if (S.phase === 'walk' && now - hudT > 100) { hudT = now; updateHud(); }
