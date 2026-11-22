@@ -39,7 +39,7 @@ html, body { height: 100%; background: var(--bg); color: var(--ink); font-family
 .btn.peek { width: 76px; height: 76px; border-radius: 50%; font-size: 13px; letter-spacing: .1em; color: var(--saffron); }
 .btn.peek small { font-size: 10px; color: var(--muted); }
 
-.overlay { position: absolute; inset: 0; background: #0b0806f2; display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.overlay { position: absolute; inset: 0; background: #0b0806; display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .overlay.show { display: flex; }
 .card { width: 100%; max-width: 420px; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .eyebrow { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--saffron); }
@@ -91,3 +91,8 @@ h2 { font-size: 44px; color: var(--saffron); font-variant-numeric: tabular-nums;
 .line { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
 .line.you { background: #2fa864; } .line.opt { background: #ff9a1f; }
 #done .card { gap: 12px; }
+
+.ghost { font-family: var(--font); font-size: 13px; letter-spacing: .08em; background: transparent; color: var(--ink); border: 1px solid #3a2b20; border-radius: 10px; padding: 12px 20px; width: 100%; max-width: 320px; margin-top: -4px; }
+#coach { display: none; text-align: center; font-size: 12px; color: #1a0f05; background: var(--saffron); border-radius: 8px; padding: 6px 10px; margin: 2px auto 8px; max-width: 330px; animation: nudge 1.2s ease-in-out infinite; }
+#coach.show { display: block; }
+@keyframes nudge { 50% { transform: translateY(3px); } }

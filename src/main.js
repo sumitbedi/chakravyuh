@@ -197,6 +197,7 @@ function step(dt, now) {
   const fwd = input.fwd(), turn = input.turn();
   S.yaw -= turn * TURN * dt;
   if (Math.abs(fwd) > 0.02) {
+    if ($('coach').classList.contains('show') && fwd > 0.3) { $('coach').classList.remove('show'); store.set('chakravyuh-coached', true); }
     const sp = fwd * SPEED * dt;
     const dx = -Math.sin(S.yaw) * sp, dy = -Math.cos(S.yaw) * sp;
     let hit = false;
@@ -367,6 +368,7 @@ function beginWalk() {
   S.ringT0 = performance.now();
   if (studyLeft > 0) { S.clock += studyLeft; floatText(`+${studyLeft}s early`, '#5fd38a'); }
   toast(S.mode === 'escape' ? 'Find the way out' : 'Find the centre');
+  if (S.ring === 1 && !store.get('chakravyuh-coached')) $('coach').classList.add('show');
   prefetchNext();
   updateHud();
 }
@@ -408,6 +410,7 @@ function clearRing() {
   const bonus = Math.round(6 + ringCells(S.ring) * 2.2);
   S.clock += bonus;
   floatText(`+${pts}  +${bonus}s`, '#ff9a1f');
+  if (clean && S.streak > 1) setTimeout(() => floatText(`Smriti ×${mult()}`, '#5fd38a'), 300);
   if (S.clock - bonus < 3) setTimeout(() => toast('Narrow escape!'), 250);
   $('vignette').style.opacity = 0;
   setTimeout(() => { if (S.phase === 'study' && S.ring === prevRing + 1) startStudy(); }, 650);
@@ -488,6 +491,12 @@ function toast(msg) {
 $('start').addEventListener('click', newRun);
 $('ready').addEventListener('click', beginWalk);
 $('again').addEventListener('click', newRun);
+$('share').addEventListener('click', async () => {
+  const text = `I escaped ${S.ring - 1} ring${S.ring === 2 ? '' : 's'} of the Chakravyuh and scored ${S.score}. Abhimanyu couldn't. Can you?`;
+  const url = location.origin;
+  try { if (navigator.share) { await navigator.share({ title: 'Chakravyuh', text, url }); return; } } catch { return; }
+  try { await navigator.clipboard.writeText(`${text} ${url}`); toast('Copied, paste it to a friend'); } catch { toast(url); }
+});
 const best0 = store.get('chakravyuh-best-run');
 if (best0) $('i-best').textContent = `Your best: ${best0}`;
 
